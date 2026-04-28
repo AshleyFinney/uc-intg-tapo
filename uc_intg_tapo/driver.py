@@ -27,7 +27,7 @@ def _entity_factory(
     device being added but exposing no controls. The supported-type filter in
     the setup flow should keep us from reaching that branch in normal use.
     """
-    dt = device_config.device_type
+    dt = (device_config.device_type or "").lower()
     if dt in _LIGHT_TYPES:
         return [TapoLight(device_config, device)]
     if dt in _SWITCH_TYPES:

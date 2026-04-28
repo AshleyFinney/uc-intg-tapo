@@ -10,7 +10,8 @@ class TapoDeviceConfig:
     host: str
     mac: str
     model: str
-    # python-kasa DeviceType enum value as string (e.g. "Bulb", "Plug",
-    # "LightStrip"). Default keeps existing on-disk configs from before this
-    # field existed loadable, "Bulb" was the only supported type at the time.
-    device_type: str = "Bulb"
+    # python-kasa DeviceType enum value as string (e.g. "bulb", "plug",
+    # "lightstrip"). Always lowercase, matches DeviceType.Bulb.value etc.
+    # Default keeps existing on-disk configs from before this field existed
+    # loadable, bulbs were the only supported type at the time.
+    device_type: str = "bulb"
