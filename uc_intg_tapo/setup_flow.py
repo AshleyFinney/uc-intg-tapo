@@ -127,6 +127,12 @@ class TapoSetupFlow(BaseSetupFlow[TapoDeviceConfig]):
             )
 
         _LOG.info("Discovery found %d supported device(s)", len(results))
+        # Default discover_devices() in the framework writes the list back to
+        # self.discovery._discovered_devices so later get_discovered_devices(id)
+        # lookups can resolve user picks. Our override has to do the same or
+        # picking from the list silently falls through to manual entry.
+        if self.discovery is not None:
+            self.discovery._discovered_devices = results
         return results
 
     def format_discovered_device_label(self, device: DiscoveredDevice) -> str:

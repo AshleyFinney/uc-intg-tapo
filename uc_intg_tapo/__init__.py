@@ -13,6 +13,7 @@ from uc_intg_tapo.account import load_account
 from uc_intg_tapo.config import TapoDeviceConfig
 from uc_intg_tapo.discovery import TapoDiscovery
 from uc_intg_tapo.driver import TapoDriver
+from uc_intg_tapo.logging_filter import install as install_credential_scrubber
 from uc_intg_tapo.setup_flow import TapoSetupFlow
 
 try:
@@ -34,6 +35,7 @@ async def main() -> None:
     )
     logging.getLogger("aiohttp").setLevel(logging.WARNING)
     logging.getLogger("websockets.server").setLevel(logging.CRITICAL)
+    install_credential_scrubber()
 
     _LOG.info("Starting Tapo Integration v%s", __version__)
 
