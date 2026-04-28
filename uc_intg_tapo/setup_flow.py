@@ -25,10 +25,14 @@ from uc_intg_tapo.const import TAPO_DISCOVERY_TIMEOUT
 
 _LOG = logging.getLogger(__name__)
 
-# Phase 1 supports lights only. Plugs (P100/P110), hubs (H100), and the like
-# are filtered out of discovery so users can't add them and have them silently
-# fail. Widen this set as more entity types land.
-_SUPPORTED_DEVICE_TYPES = {DeviceType.Bulb, DeviceType.LightStrip}
+# Phase 2 supports lights and plugs. Hubs (H100) and the like are still
+# filtered out so users can't add them and have them silently fail. Widen
+# this set as more entity types land.
+_SUPPORTED_DEVICE_TYPES = {
+    DeviceType.Bulb,
+    DeviceType.LightStrip,
+    DeviceType.Plug,
+}
 
 
 class TapoSetupFlow(BaseSetupFlow[TapoDeviceConfig]):
@@ -216,10 +220,13 @@ class TapoSetupFlow(BaseSetupFlow[TapoDeviceConfig]):
 
         name = name_override or dev.alias or f"Tapo {dev.model}"
 
+        device_type = dev.device_type.value if dev.device_type else "Unknown"
+
         return TapoDeviceConfig(
             identifier=mac_normalized,
             name=name,
             host=host,
             mac=dev.mac or "",
             model=dev.model or "",
+            device_type=device_type,
         )

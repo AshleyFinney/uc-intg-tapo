@@ -56,7 +56,7 @@ class TapoDevice(PollingDevice):
             raise ConnectionError(f"Cannot reach {self._device_config.host}")
         self._client = client
         self._state = DeviceState.ON if client.is_on else DeviceState.OFF
-        self.events.emit(DeviceEvents.UPDATE, self.identifier)
+        self.events.emit(DeviceEvents.UPDATE)
 
     async def poll_device(self) -> None:
         if self._client is None:
@@ -69,7 +69,7 @@ class TapoDevice(PollingDevice):
         new_state = DeviceState.ON if self._client.is_on else DeviceState.OFF
         if new_state != self._state:
             self._state = new_state
-            self.events.emit(DeviceEvents.UPDATE, self.identifier)
+            self.events.emit(DeviceEvents.UPDATE)
 
     async def disconnect(self) -> None:
         if self._client is not None:
@@ -84,7 +84,7 @@ class TapoDevice(PollingDevice):
         ok = await self._client.turn_on()
         if ok:
             self._state = DeviceState.ON
-            self.events.emit(DeviceEvents.UPDATE, self.identifier)
+            self.events.emit(DeviceEvents.UPDATE)
         return ok
 
     async def cmd_turn_off(self) -> bool:
@@ -93,7 +93,7 @@ class TapoDevice(PollingDevice):
         ok = await self._client.turn_off()
         if ok:
             self._state = DeviceState.OFF
-            self.events.emit(DeviceEvents.UPDATE, self.identifier)
+            self.events.emit(DeviceEvents.UPDATE)
         return ok
 
     async def cmd_toggle(self) -> bool:
