@@ -44,10 +44,13 @@ class TapoDevice(PollingDevice):
         return self._state == DeviceState.ON
 
     async def establish_connection(self) -> None:
+        if self.driver is None or self.driver.account is None:
+            raise ConnectionError("No Tapo account credentials available, complete setup first")
+
         client = TapoClient(
             self._device_config.host,
-            self._device_config.username,
-            self._device_config.password,
+            self.driver.account.username,
+            self.driver.account.password,
         )
         if not await client.connect():
             raise ConnectionError(f"Cannot reach {self._device_config.host}")

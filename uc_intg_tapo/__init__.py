@@ -9,7 +9,9 @@ from pathlib import Path
 from ucapi import DeviceStates
 from ucapi_framework import BaseConfigManager, get_config_path
 
+from uc_intg_tapo.account import load_account
 from uc_intg_tapo.config import TapoDeviceConfig
+from uc_intg_tapo.discovery import TapoDiscovery
 from uc_intg_tapo.driver import TapoDriver
 from uc_intg_tapo.setup_flow import TapoSetupFlow
 
@@ -46,7 +48,12 @@ async def main() -> None:
     )
     driver.config_manager = config_manager
 
-    setup_handler = TapoSetupFlow.create_handler(driver)
+    driver.account_dir = config_path
+    driver.account = load_account(config_path)
+    if driver.account:
+        _LOG.info("Loaded existing Tapo account from %s", config_path)
+
+    setup_handler = TapoSetupFlow.create_handler(driver, discovery=TapoDiscovery())
 
     driver_json_path = os.path.join(os.path.dirname(__file__), "..", "driver.json")
     await driver.api.init(os.path.abspath(driver_json_path), setup_handler)

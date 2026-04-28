@@ -10,5 +10,3 @@ class TapoDeviceConfig:
     host: str
     mac: str
     model: str
-    username: str
-    password: str
