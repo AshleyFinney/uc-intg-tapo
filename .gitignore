@@ -1,0 +1,19 @@
+# Runtime config (contains TP-Link credentials in plaintext, never commit)
+config/
+
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.vscode/
+.idea/
+dist/
+build/
+*.egg-info/
+.env
+.DS_Store

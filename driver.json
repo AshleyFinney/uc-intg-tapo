@@ -1,0 +1,31 @@
+{
+  "driver_id": "uc_intg_tapo",
+  "version": "0.1.0",
+  "min_core_api": "0.22.0",
+  "name": { "en": "Tapo Integration" },
+  "icon": "uc:lightbulb",
+  "description": {
+    "en": "Integration driver for TP-Link Tapo smart devices."
+  },
+  "developer": {
+    "name": "Ashley Finney"
+  },
+  "home_page": "https://github.com/AshleyFinney/uc-intg-tapo",
+  "release_date": "2026-04-28",
+  "setup_data_schema": {
+    "title": { "en": "Tapo Integration Setup" },
+    "settings": [
+      {
+        "id": "info",
+        "label": { "en": "Setup information" },
+        "field": {
+          "label": {
+            "value": {
+              "en": "On the next screen enter your TP-Link account credentials and the IP address of the Tapo device you want to add."
+            }
+          }
+        }
+      }
+    ]
+  }
+}
