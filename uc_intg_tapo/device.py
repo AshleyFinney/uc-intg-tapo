@@ -3,6 +3,7 @@
 import logging
 from typing import Any
 
+from kasa.interfaces.light import HSV
 from ucapi_framework import DeviceEvents, PollingDevice
 
 from uc_intg_tapo.client import TapoClient
@@ -43,6 +44,38 @@ class TapoDevice(PollingDevice):
     def is_on(self) -> bool:
         return self._state == DeviceState.ON
 
+    @property
+    def brightness_percent(self) -> int | None:
+        return self._client.brightness_percent if self._client else None
+
+    @property
+    def hsv(self) -> HSV | None:
+        return self._client.hsv if self._client else None
+
+    @property
+    def color_temp_kelvin(self) -> int | None:
+        return self._client.color_temp_kelvin if self._client else None
+
+    @property
+    def power_w(self) -> float | None:
+        return self._client.power_w if self._client else None
+
+    @property
+    def energy_today_kwh(self) -> float | None:
+        return self._client.energy_today_kwh if self._client else None
+
+    @property
+    def energy_this_month_kwh(self) -> float | None:
+        return self._client.energy_this_month_kwh if self._client else None
+
+    @property
+    def voltage_v(self) -> float | None:
+        return self._client.voltage_v if self._client else None
+
+    @property
+    def current_a(self) -> float | None:
+        return self._client.current_a if self._client else None
+
     async def establish_connection(self) -> None:
         if self.driver is None or self.driver.account is None:
             raise ConnectionError("No Tapo account credentials available, complete setup first")
@@ -66,10 +99,12 @@ class TapoDevice(PollingDevice):
         except Exception as err:
             _LOG.warning("[%s] Poll failed: %s", self.log_id, err)
             return
-        new_state = DeviceState.ON if self._client.is_on else DeviceState.OFF
-        if new_state != self._state:
-            self._state = new_state
-            self.events.emit(DeviceEvents.UPDATE)
+        # Always emit on a successful poll so brightness/colour/colour-temp
+        # changes propagate through to entity sync_state, not just on/off
+        # changes. The framework's update filter will dedupe wire pushes when
+        # nothing has actually changed.
+        self._state = DeviceState.ON if self._client.is_on else DeviceState.OFF
+        self.events.emit(DeviceEvents.UPDATE)
 
     async def disconnect(self) -> None:
         if self._client is not None:
@@ -98,3 +133,33 @@ class TapoDevice(PollingDevice):
 
     async def cmd_toggle(self) -> bool:
         return await (self.cmd_turn_off() if self.is_on else self.cmd_turn_on())
+
+    async def cmd_set_light_state(
+        self,
+        *,
+        brightness_percent: int | None = None,
+        hue: int | None = None,
+        saturation_percent: int | None = None,
+        color_temp_kelvin: int | None = None,
+    ) -> bool:
+        """Apply brightness/HSV/colour-temp changes; the light is turned on as a side effect."""
+        if self._client is None:
+            return False
+        ok = await self._client.set_light_state(
+            brightness_percent=brightness_percent,
+            hue=hue,
+            saturation_percent=saturation_percent,
+            color_temp_kelvin=color_temp_kelvin,
+        )
+        if ok:
+            self._state = DeviceState.ON
+            # Refresh python-kasa's local cache so the entity's sync_state
+            # reads the post-set values, not the pre-set ones. Without this,
+            # the slider on the Remote snaps back to the previous value as
+            # soon as you release it because we report stale state.
+            try:
+                await self._client.update()
+            except Exception as err:
+                _LOG.debug("[%s] Post-set refresh failed: %s", self.log_id, err)
+            self.events.emit(DeviceEvents.UPDATE)
+        return ok

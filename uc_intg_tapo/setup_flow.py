@@ -20,6 +20,7 @@ from ucapi.api_definitions import RequestUserInput
 from ucapi_framework import BaseSetupFlow, DiscoveredDevice
 
 from uc_intg_tapo.account import TapoAccount, save_account
+from uc_intg_tapo.capabilities import detect_capabilities
 from uc_intg_tapo.config import TapoDeviceConfig
 from uc_intg_tapo.const import TAPO_DISCOVERY_TIMEOUT
 
@@ -33,6 +34,21 @@ _SUPPORTED_DEVICE_TYPES = {
     DeviceType.LightStrip,
     DeviceType.Plug,
 }
+
+
+async def _close_kasa_device(dev) -> None:
+    """Best-effort tear-down of a kasa device's underlying transport.
+
+    Without this the kasa device's background tasks and aiohttp session leak,
+    asyncio later complains about ``Unclosed client session`` and the leaked
+    session keeps polling its target generating 403 errors against our active
+    session for the same host. Always wrap the close so we never raise out of
+    cleanup.
+    """
+    try:
+        await dev.disconnect()
+    except Exception:
+        pass
 
 
 class TapoSetupFlow(BaseSetupFlow[TapoDeviceConfig]):
@@ -104,31 +120,39 @@ class TapoSetupFlow(BaseSetupFlow[TapoDeviceConfig]):
         results: list[DiscoveredDevice] = []
         for ip, dev in found.items():
             try:
-                await dev.update()
-            except Exception as err:
-                _LOG.debug("Skipping %s, update failed: %s", ip, err)
-                continue
+                try:
+                    await dev.update()
+                except Exception as err:
+                    _LOG.debug("Skipping %s, update failed: %s", ip, err)
+                    continue
 
-            if dev.device_type not in _SUPPORTED_DEVICE_TYPES:
-                continue
+                if dev.device_type not in _SUPPORTED_DEVICE_TYPES:
+                    continue
 
-            mac_normalized = (dev.mac or "").replace(":", "").replace("-", "").upper()
-            if not mac_normalized:
-                _LOG.debug("Skipping %s, no MAC available", ip)
-                continue
+                mac_normalized = (dev.mac or "").replace(":", "").replace("-", "").upper()
+                if not mac_normalized:
+                    _LOG.debug("Skipping %s, no MAC available", ip)
+                    continue
 
-            label = dev.alias or f"Tapo {dev.model}"
-            results.append(
-                DiscoveredDevice(
-                    identifier=mac_normalized,
-                    name=label,
-                    address=ip,
-                    extra_data={
-                        "model": dev.model or "",
-                        "mac": dev.mac or "",
-                    },
+                label = dev.alias or f"Tapo {dev.model}"
+                results.append(
+                    DiscoveredDevice(
+                        identifier=mac_normalized,
+                        name=label,
+                        address=ip,
+                        extra_data={
+                            "model": dev.model or "",
+                            "mac": dev.mac or "",
+                        },
+                    )
                 )
-            )
+            finally:
+                # Discovery returns kasa devices with live aiohttp sessions
+                # we need to close, otherwise their background poll tasks keep
+                # running and step on the real (post-pairing) connection's
+                # session token, producing kasa 403 errors against our active
+                # session.
+                await _close_kasa_device(dev)
 
         _LOG.info("Discovery found %d supported device(s)", len(results))
         # Default discover_devices() in the framework writes the list back to
@@ -207,26 +231,40 @@ class TapoSetupFlow(BaseSetupFlow[TapoDeviceConfig]):
         except Exception as err:
             raise ValueError(f"Failed to connect to {host}: {err}") from err
 
-        # First successful connection proves the credentials. Persist them as
-        # the integration-level account so future setup runs skip the prompt.
-        if self.driver.account is None and self.driver.account_dir:
-            account = TapoAccount(username=username, password=password)
-            save_account(self.driver.account_dir, account)
-            self.driver.account = account
+        try:
+            # First successful connection proves the credentials. Persist them as
+            # the integration-level account so future setup runs skip the prompt.
+            if self.driver.account is None and self.driver.account_dir:
+                account = TapoAccount(username=username, password=password)
+                save_account(self.driver.account_dir, account)
+                self.driver.account = account
 
-        mac_normalized = (dev.mac or "").replace(":", "").replace("-", "").upper()
-        if not mac_normalized:
-            mac_normalized = host.replace(".", "_")
+            mac_normalized = (dev.mac or "").replace(":", "").replace("-", "").upper()
+            if not mac_normalized:
+                mac_normalized = host.replace(".", "_")
 
-        name = name_override or dev.alias or f"Tapo {dev.model}"
+            name = name_override or dev.alias or f"Tapo {dev.model}"
 
-        device_type = dev.device_type.value if dev.device_type else "Unknown"
+            device_type = dev.device_type.value if dev.device_type else "Unknown"
 
-        return TapoDeviceConfig(
-            identifier=mac_normalized,
-            name=name,
-            host=host,
-            mac=dev.mac or "",
-            model=dev.model or "",
-            device_type=device_type,
-        )
+            # Capability detection lives in capabilities.detect_capabilities so
+            # both pairing (here) and startup migration use the same probe. Plugs
+            # / switches return False for the light-shaped flags, which is fine:
+            # TapoSwitch ignores them. The Light/Sensor entities check the flags
+            # they care about.
+            caps = detect_capabilities(dev)
+
+            return TapoDeviceConfig(
+                identifier=mac_normalized,
+                name=name,
+                host=host,
+                mac=dev.mac or "",
+                model=dev.model or "",
+                device_type=device_type,
+                **caps,
+            )
+        finally:
+            # Close the probe session so its background tasks don't linger
+            # and step on the real polling connection that establish_connection
+            # opens shortly after pairing.
+            await _close_kasa_device(dev)
