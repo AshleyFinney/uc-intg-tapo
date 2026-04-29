@@ -10,6 +10,7 @@ persistence. Both files live in the integration's config dir which is gitignored
 
 import json
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -49,4 +50,13 @@ def save_account(config_dir: str, account: TapoAccount) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"username": account.username, "password": account.password}, f)
+    # Tighten to owner-only read/write so other non-privileged processes on
+    # the Remote can't read it. Defence in depth, not a substitute for
+    # encryption (we can't encrypt without an OS-level key store; see the
+    # README's experimental disclaimer). On Windows this is largely a no-op
+    # because POSIX modes don't fully apply, but it's still safe to call.
+    try:
+        os.chmod(path, 0o600)
+    except OSError as err:
+        _LOG.warning("Could not tighten file mode on %s: %s", path, err)
     _LOG.info("Saved Tapo account to %s", path)

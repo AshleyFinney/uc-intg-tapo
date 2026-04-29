@@ -12,6 +12,7 @@ This integration is **early-access software**. It works for the maintainer's own
 
 - You use it at your own risk. Misbehaviour, lost configuration, devices that need re-pairing, or anything else that goes wrong is your responsibility, not the maintainer's.
 - Future versions may include breaking changes. Entity IDs, configuration schema, or feature behaviour might shift between releases. Effort will be made to limit this, but no guarantees.
+- **Your TP-Link account credentials are stored as plaintext on the Remote.** There's no practical way to encrypt them: any decryption key would have to live on the same device, which is security theatre. If storing your TP-Link account password in plaintext on the Remote bothers you, please don't install this integration.
 - Some features behave the way they do because of Tapo bulb firmware, Remote 3 firmware, or python-kasa library decisions. Those aren't always fixable from inside this integration.
 
 If any of that puts you off, wait for a later, more stable release.
@@ -47,7 +48,7 @@ Voltage and current sensors only appear on devices that report those readings.
 
 ### Other
 
-- **Touch slider** on the Remote 3 can be bound to brightness, hue, saturation, or colour temperature in any activity that includes a light entity.
+- **Touch slider** on the Remote 3 controls brightness for any light entity in an activity.
 - **Capability migration** at startup, so devices paired before a feature was added pick it up automatically once you upgrade.
 
 ---
