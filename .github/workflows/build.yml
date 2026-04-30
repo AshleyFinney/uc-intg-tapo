@@ -135,11 +135,14 @@ jobs:
         run: |
           for filename in *.tar.gz; do echo "sha256  `sha256sum $filename`" >> ${{needs.build.outputs.driver_id}}.hash; done;
 
-      - name: Publish release
+      - name: Publish draft release
         uses: ncipollo/release-action@v1
         with:
           artifacts: "*.tar.gz,${{needs.build.outputs.driver_id}}.hash"
-          draft: false
+          # Releases land as drafts so we can install on the Remote and
+          # smoke-test before publishing. Flip to false again if we ever
+          # want auto-publish back.
+          draft: true
           generateReleaseNotes: true
           artifactErrorsFailBuild: true
           tag: v${{needs.build.outputs.version}}
