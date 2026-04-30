@@ -226,20 +226,28 @@ class TapoSetupFlow(BaseSetupFlow[TapoDeviceConfig]):
         return RequestUserInput({"en": "Discovered Devices"}, fields)
 
     async def _handle_user_data_response(self, msg):
-        """Intercept multi-checkbox responses from our discovery screen.
+        """Intercept any DISCOVER-step response and route to multi-pick.
 
-        The framework's dispatcher routes DISCOVER-step responses to
-        ``_handle_device_selection`` only when ``"choice"`` is in the
-        input. Our screen omits ``choice`` and uses one checkbox per
-        device, so without this override the dispatcher would fall
-        through and error. Detect the multi-checkbox shape and route to
-        our handler before delegating to super() for everything else.
+        The Remote 3 configurator appears to submit our checkbox screen
+        in different wire formats depending on how the user interacts:
+        sometimes one boolean per device id (multi-pick), sometimes a
+        single ``choice`` field carrying one device id. We can't tell
+        ahead of time which we'll get, so route everything at this step
+        to ``_handle_multi_pick`` and let it sort out the shape.
+
+        ``choice == "manual"`` is the framework's manual-entry sentinel,
+        we let super() handle that path unchanged.
         """
         if (
             self._setup_step == SetupSteps.DISCOVER
-            and "choice" not in msg.input_values
             and self._pending_device_config is None
+            and msg.input_values.get("choice") != "manual"
         ):
+            _LOG.info(
+                "Discovery response: %d input keys, choice=%r",
+                len(msg.input_values),
+                msg.input_values.get("choice"),
+            )
             return await self._handle_multi_pick(msg)
         return await super()._handle_user_data_response(msg)
 
@@ -269,6 +277,33 @@ class TapoSetupFlow(BaseSetupFlow[TapoDeviceConfig]):
             len(discovered_list), len(msg.input_values),
         )
         picks = [d for d in discovered_list if _ticked(d.identifier)]
+
+        # Fallback for the configurator's single-pick wire format: if
+        # no checkboxes are ticked but `choice` carries a device id we
+        # discovered, treat it as one pick. The Remote 3 configurator
+        # collapses our checkbox screen submissions into single-pick
+        # form during reconfigure-mode "Add a new device" flows
+        # (verified by log analysis 2026-04-30); the initial-setup flow
+        # uses the multi-checkbox wire format properly. Either way we
+        # get the right behaviour here.
+        if not picks:
+            choice = msg.input_values.get("choice")
+            if choice and choice != "manual":
+                for d in discovered_list:
+                    if d.identifier == choice:
+                        picks = [d]
+                        _LOG.info(
+                            "Multi-pick: no checkboxes ticked, falling back to "
+                            "single-choice pick: %s", choice,
+                        )
+                        break
+                else:
+                    _LOG.info(
+                        "Multi-pick: choice=%r not found in cached discovered list "
+                        "(probably already paired and filtered out, or stale)",
+                        choice,
+                    )
+
         _LOG.info(
             "Multi-pick: %d device(s) ticked: %s",
             len(picks), [p.identifier for p in picks],
