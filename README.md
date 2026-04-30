@@ -89,9 +89,9 @@ The credentials are stored on the Remote alongside the integration's other confi
 
 ### 2. Discover devices
 
-After the credentials screen, the integration scans your LAN for Tapo devices. Bulbs, strips, and plugs that respond appear in a dropdown. Pick one, give it a friendly name (or accept the alias the device reports), and confirm. Repeat for each device you want to control.
+After the credentials screen, the integration scans your LAN for Tapo devices. Bulbs, strips, and plugs that respond appear as a list of checkboxes, with any devices already paired to this integration filtered out. Tick the ones you want to add and submit, and the integration pairs them all in one go.
 
-If a device doesn't appear in the list, you can fall back to manual entry by IP. This is also the path for devices on a different VLAN to your Remote.
+If a device doesn't appear, or you'd rather enter an IP directly, submit the screen with no boxes ticked to drop into manual entry. That's also the path for devices on a different VLAN to your Remote.
 
 ### 3. Add devices to activities
 
