@@ -1,6 +1,6 @@
 [project]
 name = "uc-intg-tapo"
-version = "0.1"
+version = "0.2"
 description = "TP-Link Tapo integration for Unfolded Circle Remote 2/3"
 readme = "README.md"
 license = { text = "MPL-2.0" }

@@ -112,7 +112,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
   release:
-    name: Create Draft Release
+    name: Create Release
     runs-on: ubuntu-24.04
     needs: [build, docker]
     permissions:
@@ -135,14 +135,11 @@ jobs:
         run: |
           for filename in *.tar.gz; do echo "sha256  `sha256sum $filename`" >> ${{needs.build.outputs.driver_id}}.hash; done;
 
-      - name: Publish draft release
+      - name: Publish release
         uses: ncipollo/release-action@v1
         with:
           artifacts: "*.tar.gz,${{needs.build.outputs.driver_id}}.hash"
-          # Initial public release stays as a draft so it can be reviewed
-          # before going live. Flip this to false once we're past the
-          # early-access phase.
-          draft: true
+          draft: false
           generateReleaseNotes: true
           artifactErrorsFailBuild: true
           tag: v${{needs.build.outputs.version}}
