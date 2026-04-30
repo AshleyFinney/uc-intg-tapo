@@ -5,10 +5,12 @@ the pre-discovery screen only appears the first time. Subsequent runs (adding
 more devices) reuse the stored account silently.
 
 Discovery scans the LAN with the stored credentials via python-kasa, filters to
-light-shaped devices (Phase 1: bulbs and light strips only), and presents them
-to the user. Picking one runs query_device, which validates the connection and
-persists a config keyed by MAC address. Manual entry stays as a fallback when
-discovery finds nothing.
+supported device types and to devices not already configured, and presents the
+remainder as a multi-checkbox screen so the user can pair several at once.
+Submitting the screen with no boxes ticked drops to manual entry (a single-IP
+form). Each picked device runs query_device to validate the connection and
+build a config keyed by MAC address; failures during the batch are logged but
+don't abort the rest.
 """
 
 import asyncio
@@ -16,8 +18,13 @@ import logging
 from typing import Any
 
 from kasa import Credentials, DeviceType, Discover
-from ucapi.api_definitions import RequestUserInput
-from ucapi_framework import BaseSetupFlow, DiscoveredDevice
+from ucapi.api_definitions import (
+    IntegrationSetupError,
+    RequestUserInput,
+    SetupComplete,
+    SetupError,
+)
+from ucapi_framework import BaseSetupFlow, DiscoveredDevice, SetupSteps
 
 from uc_intg_tapo.account import TapoAccount, save_account
 from uc_intg_tapo.capabilities import detect_capabilities
@@ -154,7 +161,20 @@ class TapoSetupFlow(BaseSetupFlow[TapoDeviceConfig]):
                 # session.
                 await _close_kasa_device(dev)
 
-        _LOG.info("Discovery found %d supported device(s)", len(results))
+        # Filter out devices that are already configured so the multi-pick
+        # screen only offers things the user can actually add. Devices in
+        # self.config are already paired; re-pairing them isn't useful here
+        # and would just pad the list. The framework's _finalize_device_setup
+        # would also reject duplicates downstream.
+        already_paired = {r.identifier for r in results if self.config.contains(r.identifier)}
+        if already_paired:
+            _LOG.debug(
+                "Filtering %d already-paired device(s) from discovery: %s",
+                len(already_paired), sorted(already_paired),
+            )
+        results = [r for r in results if r.identifier not in already_paired]
+
+        _LOG.info("Discovery found %d device(s) available to add", len(results))
         # Default discover_devices() in the framework writes the list back to
         # self.discovery._discovered_devices so later get_discovered_devices(id)
         # lookups can resolve user picks. Our override has to do the same or
@@ -162,6 +182,121 @@ class TapoSetupFlow(BaseSetupFlow[TapoDeviceConfig]):
         if self.discovery is not None:
             self.discovery._discovered_devices = results
         return results
+
+    async def get_discovered_devices_screen(
+        self, devices: list[DiscoveredDevice]
+    ) -> RequestUserInput:
+        """Multi-checkbox picker for discovered devices.
+
+        Each device is its own checkbox so the user can pick any subset in
+        a single screen. The framework's default screen uses a single-pick
+        dropdown which means re-running setup once per device, painful when
+        seeding a new install with many Tapo devices.
+
+        No "choice" field is included; our override of
+        ``_handle_user_data_response`` detects the multi-checkbox shape and
+        routes to ``_handle_multi_pick``. Submitting with no boxes ticked
+        falls through to manual entry, communicated in the screen text.
+        """
+        fields: list[dict[str, Any]] = [
+            {
+                "id": "info",
+                "label": {"en": ""},
+                "field": {
+                    "label": {
+                        "value": {
+                            "en": (
+                                "Tick the devices you want to add. To add a "
+                                "device by IP address manually instead, submit "
+                                "this screen with all boxes unticked."
+                            )
+                        }
+                    }
+                },
+            }
+        ]
+        for device in devices:
+            fields.append(
+                {
+                    "id": device.identifier,
+                    "label": {"en": self.format_discovered_device_label(device)},
+                    "field": {"checkbox": {"value": False}},
+                }
+            )
+        return RequestUserInput({"en": "Discovered Devices"}, fields)
+
+    async def _handle_user_data_response(self, msg):
+        """Intercept multi-checkbox responses from our discovery screen.
+
+        The framework's dispatcher routes DISCOVER-step responses to
+        ``_handle_device_selection`` only when ``"choice"`` is in the
+        input. Our screen omits ``choice`` and uses one checkbox per
+        device, so without this override the dispatcher would fall
+        through and error. Detect the multi-checkbox shape and route to
+        our handler before delegating to super() for everything else.
+        """
+        if (
+            self._setup_step == SetupSteps.DISCOVER
+            and "choice" not in msg.input_values
+            and self._pending_device_config is None
+        ):
+            return await self._handle_multi_pick(msg)
+        return await super()._handle_user_data_response(msg)
+
+    async def _handle_multi_pick(self, msg):
+        """Pair every device the user ticked on the multi-pick screen.
+
+        Empty selection routes to manual entry (per the screen's hint).
+        Otherwise we loop through the picked devices, run query_device
+        on each, save the resulting config. Failures are logged but
+        don't abort the batch; we return SetupComplete if at least one
+        device was added.
+        """
+        discovered_list = (
+            self.discovery._discovered_devices if self.discovery is not None else []
+        )
+        picks = [d for d in discovered_list if msg.input_values.get(d.identifier)]
+
+        if not picks:
+            _LOG.info("Multi-pick: no devices ticked, dropping to manual entry")
+            return await self._handle_manual_entry()
+
+        _LOG.info("Multi-pick: pairing %d device(s)", len(picks))
+        succeeded: list[str] = []
+        failed: list[str] = []
+        for device in picks:
+            try:
+                input_values = await self.prepare_input_from_discovery(
+                    device, msg.input_values
+                )
+                result = await self.query_device(input_values)
+                if isinstance(result, (SetupError, RequestUserInput)):
+                    _LOG.warning(
+                        "Multi-pick: %s yielded a non-config result, skipping",
+                        device.identifier,
+                    )
+                    failed.append(device.identifier)
+                    continue
+                self.config.add_or_update(result)
+                succeeded.append(device.identifier)
+            except Exception as err:
+                _LOG.warning(
+                    "Multi-pick: failed to pair %s (%s): %s",
+                    device.identifier, device.address, err,
+                )
+                failed.append(device.identifier)
+
+        if failed:
+            _LOG.info(
+                "Multi-pick complete: %d added, %d failed (%s)",
+                len(succeeded), len(failed), failed,
+            )
+        else:
+            _LOG.info("Multi-pick complete: %d added", len(succeeded))
+
+        if not succeeded:
+            return SetupError(error_type=IntegrationSetupError.NOT_FOUND)
+        return SetupComplete()
 
     def format_discovered_device_label(self, device: DiscoveredDevice) -> str:
         model = (device.extra_data or {}).get("model") or "Tapo"
