@@ -255,7 +255,24 @@ class TapoSetupFlow(BaseSetupFlow[TapoDeviceConfig]):
         discovered_list = (
             self.discovery._discovered_devices if self.discovery is not None else []
         )
-        picks = [d for d in discovered_list if msg.input_values.get(d.identifier)]
+
+        # Checkbox values come back as strings on the wire ("true" / "false"),
+        # not Python booleans. ucapi-framework reads them with the same
+        # str(...).strip().lower() == "true" pattern (see ucapi_framework/
+        # setup.py:1360). A naive truthy check on the raw value would treat
+        # the literal string "false" as truthy and pick every device.
+        def _ticked(identifier: str) -> bool:
+            return str(msg.input_values.get(identifier, False)).strip().lower() == "true"
+
+        _LOG.info(
+            "Multi-pick: handler entered with %d cached discovered, %d input keys",
+            len(discovered_list), len(msg.input_values),
+        )
+        picks = [d for d in discovered_list if _ticked(d.identifier)]
+        _LOG.info(
+            "Multi-pick: %d device(s) ticked: %s",
+            len(picks), [p.identifier for p in picks],
+        )
 
         if not picks:
             _LOG.info("Multi-pick: no devices ticked, dropping to manual entry")
