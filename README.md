@@ -73,7 +73,7 @@ Out of scope:
 ## Installation
 
 1. Download the latest `uc-intg-tapo-<version>-aarch64.tar.gz` from the [Releases page](https://github.com/AshleyFinney/uc-intg-tapo/releases).
-2. On your Remote 2 or Remote 3, open the web configurator (Settings → Integrations → Add Integration → Upload from file).
+2. On your Remote 2 or Remote 3, open the web configurator and go to Integrations → Add new → Install custom.
 3. Upload the `.tar.gz`. The Remote will install the integration and restart it.
 4. Continue to setup, below.
 
