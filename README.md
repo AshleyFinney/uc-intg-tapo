@@ -97,7 +97,7 @@ If a device doesn't appear in the list, you can fall back to manual entry by IP.
 
 Once paired, each device shows up as one or more entities in your Remote's entity list. Add them to activities the same way you would any other entity.
 
-The **Remote 3's touch slider** can be bound to brightness, hue, saturation, or colour temperature in the activity settings. Open Devices → tap the bulb to get the standalone entity view with brightness slider, colour wheel, and colour-temperature slider auto-rendered.
+The **Remote 3's touch slider** can be bound to brightness in the activity settings (see the known-issues section below for a quirk you'll need to work around when binding it). Open Devices → tap the bulb to get the standalone entity view with brightness slider, colour wheel, and colour-temperature slider auto-rendered.
 
 ---
 
