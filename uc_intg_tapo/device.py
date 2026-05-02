@@ -1,14 +1,16 @@
 """Tapo device backed by python-kasa, polled via the framework's PollingDevice."""
 
+import asyncio
 import logging
 from typing import Any
 
+from kasa import Credentials, Discover
 from kasa.interfaces.light import HSV
 from ucapi_framework import DeviceEvents, PollingDevice
 
 from uc_intg_tapo.client import TapoClient
 from uc_intg_tapo.config import TapoDeviceConfig
-from uc_intg_tapo.const import DeviceState, TAPO_POLL_INTERVAL
+from uc_intg_tapo.const import DeviceState, TAPO_DISCOVERY_TIMEOUT, TAPO_POLL_INTERVAL
 
 _LOG = logging.getLogger(__name__)
 
@@ -80,16 +82,64 @@ class TapoDevice(PollingDevice):
         if self.driver is None or self.driver.account is None:
             raise ConnectionError("No Tapo account credentials available, complete setup first")
 
-        client = TapoClient(
-            self._device_config.host,
-            self.driver.account.username,
-            self.driver.account.password,
-        )
-        if not await client.connect():
+        username = self.driver.account.username
+        password = self.driver.account.password
+
+        client = TapoClient(self._device_config.host, username, password)
+        if await client.connect():
+            self._client = client
+            self._state = DeviceState.ON if client.is_on else DeviceState.OFF
+            self.events.emit(DeviceEvents.UPDATE)
+            return
+
+        # Direct probe failed. The device may still be online but reachable at a
+        # different IP after a DHCP lease change. Broadcast-discover the network
+        # and match by MAC (the config's identifier) before giving up.
+        new_host = await self._rediscover_by_mac(Credentials(username=username, password=password))
+        if new_host is None or new_host == self._device_config.host:
             raise ConnectionError(f"Cannot reach {self._device_config.host}")
+
+        _LOG.info(
+            "[%s] IP changed from %s to %s, updating config",
+            self.log_id, self._device_config.host, new_host,
+        )
+        self.update_config(host=new_host)
+
+        client = TapoClient(new_host, username, password)
+        if not await client.connect():
+            raise ConnectionError(f"Cannot reach {new_host} after rediscovery")
         self._client = client
         self._state = DeviceState.ON if client.is_on else DeviceState.OFF
         self.events.emit(DeviceEvents.UPDATE)
+
+    async def _rediscover_by_mac(self, creds: Credentials) -> str | None:
+        target_mac = self._device_config.identifier
+        if not target_mac:
+            return None
+        try:
+            found = await asyncio.wait_for(
+                Discover.discover(credentials=creds, discovery_timeout=TAPO_DISCOVERY_TIMEOUT),
+                timeout=TAPO_DISCOVERY_TIMEOUT + 5,
+            )
+        except Exception as err:
+            _LOG.debug("[%s] Rediscovery scan failed: %s", self.log_id, err)
+            return None
+
+        try:
+            for ip, dev in found.items():
+                mac_normalized = (dev.mac or "").replace(":", "").replace("-", "").upper()
+                if mac_normalized == target_mac:
+                    return ip
+            return None
+        finally:
+            # Close every probe session so its background poll loop doesn't
+            # collide with the real session we open in establish_connection.
+            # Same reason as setup_flow's _close_kasa_device helper.
+            for dev in found.values():
+                try:
+                    await dev.disconnect()
+                except Exception:
+                    pass
 
     async def poll_device(self) -> None:
         if self._client is None:
