@@ -9,6 +9,8 @@ from uc_intg_tapo.account import TapoAccount
 from uc_intg_tapo.config import TapoDeviceConfig
 from uc_intg_tapo.device import TapoDevice
 from uc_intg_tapo.light import TapoLight
+from uc_intg_tapo.remote import TapoEffectRemote
+from uc_intg_tapo.select import TapoLightEffect
 from uc_intg_tapo.sensor import TapoEnergySensor, kinds_for as energy_sensor_kinds
 from uc_intg_tapo.switch import TapoSwitch
 
@@ -47,6 +49,13 @@ def _entity_factory(
     # device_type so we'd pick up future emeter-capable devices for free.
     for kind in energy_sensor_kinds(device_config):
         entities.append(TapoEnergySensor(kind, device_config, device))
+
+    # Light-effect Select (full-list dropdown, including the OFF sentinel) +
+    # Remote (effect names as simple_commands so users can bind whichever
+    # ones they want to their own buttons in the Web Configurator).
+    if device_config.has_light_effect and device_config.effect_names:
+        entities.append(TapoLightEffect(device_config, device))
+        entities.append(TapoEffectRemote(device_config, device))
 
     return entities
 

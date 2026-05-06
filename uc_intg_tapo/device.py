@@ -59,6 +59,10 @@ class TapoDevice(PollingDevice):
         return self._client.color_temp_kelvin if self._client else None
 
     @property
+    def current_effect(self) -> str | None:
+        return self._client.current_effect if self._client else None
+
+    @property
     def power_w(self) -> float | None:
         return self._client.power_w if self._client else None
 
@@ -183,6 +187,22 @@ class TapoDevice(PollingDevice):
 
     async def cmd_toggle(self) -> bool:
         return await (self.cmd_turn_off() if self.is_on else self.cmd_turn_on())
+
+    async def cmd_set_effect(self, name: str) -> bool:
+        """Apply a built-in light effect by name. Pass the OFF sentinel to stop."""
+        if self._client is None:
+            return False
+        ok = await self._client.set_effect(name)
+        if ok:
+            self._state = DeviceState.ON
+            try:
+                # Refresh kasa's local cache so the entity's sync_state reads
+                # the post-set effect value, same reasoning as cmd_set_light_state.
+                await self._client.update()
+            except Exception as err:
+                _LOG.debug("[%s] Post-effect refresh failed: %s", self.log_id, err)
+            self.events.emit(DeviceEvents.UPDATE)
+        return ok
 
     async def cmd_set_light_state(
         self,

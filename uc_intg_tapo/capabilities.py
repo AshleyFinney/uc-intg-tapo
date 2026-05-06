@@ -19,6 +19,8 @@ _CAPABILITY_FIELDS = (
     "color_temp_max_kelvin",
     "has_energy",
     "has_voltage_current",
+    "has_light_effect",
+    "effect_names",
 )
 
 
@@ -36,6 +38,8 @@ def detect_capabilities(kasa_dev: Any) -> dict[str, Any]:
         "color_temp_max_kelvin": 0,
         "has_energy": Module.Energy in kasa_dev.modules,
         "has_voltage_current": False,
+        "has_light_effect": Module.LightEffect in kasa_dev.modules,
+        "effect_names": [],
     }
 
     if caps["has_color_temp"]:
@@ -54,6 +58,20 @@ def detect_capabilities(kasa_dev: Any) -> dict[str, Any]:
         caps["has_voltage_current"] = energy.supports(
             EnergyInterface.ModuleFeature.VOLTAGE_CURRENT
         )
+
+    if caps["has_light_effect"]:
+        # python-kasa's LightEffect (bulbs) and LightStripEffect (strips) both
+        # register as Module.LightEffect with a common interface. effect_list
+        # is a list of names with the OFF sentinel as element 0; remaining
+        # entries are the named effects (Aurora, Sunrise, Party, Relax, etc).
+        try:
+            light_effect = kasa_dev.modules[Module.LightEffect]
+            caps["effect_names"] = list(light_effect.effect_list)
+        except Exception:
+            # Module present but list is unreadable — treat as not supported
+            # rather than wire up an empty Select / no Buttons.
+            caps["has_light_effect"] = False
+            caps["effect_names"] = []
 
     return caps
 

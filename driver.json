@@ -1,6 +1,6 @@
 {
   "driver_id": "uc_intg_tapo",
-  "version": "0.7",
+  "version": "0.8",
   "min_core_api": "0.22.0",
   "name": { "en": "Tapo Integration" },
   "icon": "uc:lightbulb",
@@ -11,7 +11,7 @@
     "name": "Ashley Finney"
   },
   "home_page": "https://github.com/AshleyFinney/uc-intg-tapo",
-  "release_date": "2026-05-04",
+  "release_date": "2026-05-06",
   "setup_data_schema": {
     "title": { "en": "Tapo Integration Setup" },
     "settings": [

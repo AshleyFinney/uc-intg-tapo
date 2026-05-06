@@ -27,3 +27,12 @@ class TapoDeviceConfig:
     color_temp_max_kelvin: int | None = None
     has_energy: bool | None = None
     has_voltage_current: bool | None = None
+    # Built-in dynamic light effects (LightEffect / LightStripEffect modules).
+    # None means "never probed", triggers migration on next startup.
+    has_light_effect: bool | None = None
+    # Cached effect name list as python-kasa exposes it: ['Off', 'Aurora', ...]
+    # for strips; ['Off', 'Party', 'Relax'] for L530-style bulbs. Element 0 is
+    # the OFF sentinel; the remainder are the named effects users get buttons
+    # for. Stored at pairing-time so the entity factory can emit one Button per
+    # named effect without needing the kasa device live at registration time.
+    effect_names: list[str] | None = None

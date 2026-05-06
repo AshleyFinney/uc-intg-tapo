@@ -152,6 +152,54 @@ class TapoClient:
             _LOG.debug("Reading color_temp failed for %s: %s", self._host, err)
             return None
 
+    # ----- Light-effect access (L920 strips, L530 bulbs etc.) ---------
+
+    @property
+    def _light_effect(self):
+        """Return the python-kasa LightEffect module if present, else None."""
+        if self._device is None:
+            return None
+        return self._device.modules.get(Module.LightEffect)
+
+    @property
+    def has_light_effect(self) -> bool:
+        return self._light_effect is not None
+
+    @property
+    def effect_names(self) -> list[str]:
+        """Effect names including the OFF sentinel as element 0."""
+        eff = self._light_effect
+        try:
+            return list(eff.effect_list) if eff is not None else []
+        except Exception as err:
+            _LOG.debug("Reading effect_list failed for %s: %s", self._host, err)
+            return []
+
+    @property
+    def current_effect(self) -> str | None:
+        """Active effect name, or the OFF sentinel string when nothing's running."""
+        eff = self._light_effect
+        if eff is None:
+            return None
+        try:
+            return eff.effect
+        except Exception as err:
+            _LOG.debug("Reading current effect failed for %s: %s", self._host, err)
+            return None
+
+    async def set_effect(self, name: str) -> bool:
+        """Apply an effect by name. Pass the OFF sentinel string to stop the running effect."""
+        eff = self._light_effect
+        if eff is None:
+            _LOG.warning("set_effect called on non-light-effect device %s", self._host)
+            return False
+        try:
+            await eff.set_effect(name)
+            return True
+        except Exception as err:
+            _LOG.warning("set_effect(%s) failed for %s: %s", name, self._host, err)
+            return False
+
     # ----- Energy-specific access (P110 plugs, etc) ---------------------
 
     @property
