@@ -88,17 +88,19 @@ class TapoDevice(PollingDevice):
 
         username = self.driver.account.username
         password = self.driver.account.password
+        expected_mac = self._device_config.identifier
 
-        client = TapoClient(self._device_config.host, username, password)
+        client = TapoClient(self._device_config.host, username, password, expected_mac)
         if await client.connect():
             self._client = client
             self._state = DeviceState.ON if client.is_on else DeviceState.OFF
             self.events.emit(DeviceEvents.UPDATE)
             return
 
-        # Direct probe failed. The device may still be online but reachable at a
-        # different IP after a DHCP lease change. Broadcast-discover the network
-        # and match by MAC (the config's identifier) before giving up.
+        # Direct probe failed OR answered with the wrong device (MAC mismatch
+        # after a DHCP reshuffle put a different Tapo unit on our saved IP). The
+        # device may still be online at a different IP. Broadcast-discover the
+        # network and match by MAC (the config's identifier) before giving up.
         new_host = await self._rediscover_by_mac(Credentials(username=username, password=password))
         if new_host is None or new_host == self._device_config.host:
             raise ConnectionError(f"Cannot reach {self._device_config.host}")
@@ -109,7 +111,7 @@ class TapoDevice(PollingDevice):
         )
         self.update_config(host=new_host)
 
-        client = TapoClient(new_host, username, password)
+        client = TapoClient(new_host, username, password, expected_mac)
         if not await client.connect():
             raise ConnectionError(f"Cannot reach {new_host} after rediscovery")
         self._client = client

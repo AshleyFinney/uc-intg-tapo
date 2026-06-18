@@ -8,11 +8,27 @@ from kasa.interfaces.light import HSV, LightState
 _LOG = logging.getLogger(__name__)
 
 
+def _normalize_mac(mac: str | None) -> str:
+    """Strip separators and upper-case a MAC. Matches the identifier scheme
+    used at pairing time (setup_flow) and for config identifiers."""
+    return (mac or "").replace(":", "").replace("-", "").upper()
+
+
 class TapoClient:
-    def __init__(self, host: str, username: str, password: str) -> None:
+    def __init__(
+        self,
+        host: str,
+        username: str,
+        password: str,
+        expected_mac: str | None = None,
+    ) -> None:
         self._host = host
         self._creds = Credentials(username=username, password=password)
         self._device: SmartDevice | None = None
+        # Normalised MAC we paired against (device_config.identifier). When set,
+        # connect() verifies the device answering at _host actually has this MAC
+        # and rejects it otherwise. None disables the check (e.g. ad-hoc probes).
+        self._expected_mac = _normalize_mac(expected_mac) or None
 
     async def connect(self) -> bool:
         try:
@@ -20,11 +36,29 @@ class TapoClient:
                 host=self._host, credentials=self._creds
             )
             await self._device.update()
-            return True
         except Exception as err:
             _LOG.warning("Failed to connect to %s: %s", self._host, err)
             self._device = None
             return False
+
+        # Verify identity. After a DHCP reshuffle a *different* Tapo device may
+        # now hold the saved IP. Without this check we'd bind to whoever answers
+        # and send commands to the wrong device (a plug action toggling a light
+        # strip, etc). The MAC is the stable identity we paired against; reject a
+        # mismatch so establish_connection falls through to MAC-based rediscovery
+        # and re-pins the correct IP.
+        if self._expected_mac is not None:
+            actual = _normalize_mac(self.mac)
+            if actual != self._expected_mac:
+                _LOG.warning(
+                    "Connected to %s but it is MAC %s, expected %s - not our "
+                    "device, rejecting so rediscovery can re-pin by MAC",
+                    self._host, actual or "<unknown>", self._expected_mac,
+                )
+                await self.disconnect()
+                return False
+
+        return True
 
     async def disconnect(self) -> None:
         if self._device is None:

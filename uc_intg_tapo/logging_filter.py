@@ -95,6 +95,15 @@ _KASA_TRANSIENT_PATTERNS = (
     # 400 "to handshake2" on first connect of a P110 — Tapo session-token
     # quirk that recovers in ~250 ms.
     re.compile(r"400 to handshake2"),
+    # "Invalid padding bytes" decryption failure — fires when a device's
+    # encrypted response can't be decrypted because the session key drifted
+    # mid-exchange (concurrent client / token rotation between our request
+    # and the device's reply). python-kasa re-handshakes on the next poll and
+    # the device keeps working. Validated 2026-05-07 by a community user with
+    # 14 plugs whose log showed 5 of these spread over ~100 min, all
+    # self-recovered. Emitted from kasa.smart.smartdevice (NOT klaptransport),
+    # so install() also attaches the filter to that logger.
+    re.compile(r"Error trying to decrypt device.*Invalid padding bytes"),
 )
 
 
@@ -145,5 +154,13 @@ def install() -> None:
     for handler in logging.getLogger().handlers:
         handler.addFilter(scrubber)
 
-    kasa_logger = logging.getLogger("kasa.transports.klaptransport")
-    kasa_logger.addFilter(KasaTransientNoiseFilter())
+    # Attach the same filter to every kasa sublogger that emits a known-
+    # transient pattern. Filter scope is per-logger so we attach narrowly
+    # rather than at the root "kasa" logger; that keeps per-record cost
+    # negligible for kasa loggers that don't emit any of our patterns.
+    noise_filter = KasaTransientNoiseFilter()
+    for logger_name in (
+        "kasa.transports.klaptransport",
+        "kasa.smart.smartdevice",
+    ):
+        logging.getLogger(logger_name).addFilter(noise_filter)
