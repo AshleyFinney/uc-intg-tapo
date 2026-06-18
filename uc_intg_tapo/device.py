@@ -89,8 +89,11 @@ class TapoDevice(PollingDevice):
         username = self.driver.account.username
         password = self.driver.account.password
         expected_mac = self._device_config.identifier
+        device_type = self._device_config.device_type
 
-        client = TapoClient(self._device_config.host, username, password, expected_mac)
+        client = TapoClient(
+            self._device_config.host, username, password, expected_mac, device_type
+        )
         if await client.connect():
             self._client = client
             self._state = DeviceState.ON if client.is_on else DeviceState.OFF
@@ -111,7 +114,7 @@ class TapoDevice(PollingDevice):
         )
         self.update_config(host=new_host)
 
-        client = TapoClient(new_host, username, password, expected_mac)
+        client = TapoClient(new_host, username, password, expected_mac, device_type)
         if not await client.connect():
             raise ConnectionError(f"Cannot reach {new_host} after rediscovery")
         self._client = client

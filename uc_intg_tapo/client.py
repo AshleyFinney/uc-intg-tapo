@@ -2,7 +2,13 @@
 
 import logging
 
-from kasa import Credentials, Discover, Module, SmartDevice
+from kasa import Credentials, Device, Discover, Module, SmartDevice
+from kasa.deviceconfig import (
+    DeviceConfig,
+    DeviceConnectionParameters,
+    DeviceEncryptionType,
+    DeviceFamily,
+)
 from kasa.interfaces.light import HSV, LightState
 
 _LOG = logging.getLogger(__name__)
@@ -14,6 +20,16 @@ def _normalize_mac(mac: str | None) -> str:
     return (mac or "").replace(":", "").replace("-", "").upper()
 
 
+# Map our stored device_type (python-kasa DeviceType.value, lowercase) to the
+# connection DeviceFamily used to build a no-discovery DeviceConfig. Bulbs and
+# light strips share the TAPOBULB family (there is no separate strip family).
+_FAMILY_FOR_DEVICE_TYPE = {
+    "plug": DeviceFamily.SmartTapoPlug,
+    "bulb": DeviceFamily.SmartTapoBulb,
+    "lightstrip": DeviceFamily.SmartTapoBulb,
+}
+
+
 class TapoClient:
     def __init__(
         self,
@@ -21,6 +37,7 @@ class TapoClient:
         username: str,
         password: str,
         expected_mac: str | None = None,
+        device_type: str | None = None,
     ) -> None:
         self._host = host
         self._creds = Credentials(username=username, password=password)
@@ -29,12 +46,48 @@ class TapoClient:
         # connect() verifies the device answering at _host actually has this MAC
         # and rejects it otherwise. None disables the check (e.g. ad-hoc probes).
         self._expected_mac = _normalize_mac(expected_mac) or None
+        # python-kasa DeviceType.value (lowercase) used to build a no-discovery
+        # connection config. None / unknown falls back to UDP discovery.
+        self._device_type = (device_type or "").lower()
+
+    async def _open_device(self) -> SmartDevice:
+        """Open a connection to the device, preferring direct connect.
+
+        ``Device.connect(config=...)`` skips the UDP discovery handshake and
+        connects straight to the control port. python-kasa recommends this over
+        ``discover_single`` because it "performs better when the WiFi network is
+        congested or the device is not responding to discovery requests" — which
+        is exactly the failure mode where a device is pingable and cloud-
+        controllable at its saved IP but never answers the discovery probe (seen
+        on a P100 plug, 2026-06-18). We construct the config from data we already
+        hold (host + account credentials + device_type), so no discovery is
+        needed at all on the happy path.
+
+        Encryption is assumed KLAP (current Tapo firmware; matches the
+        klaptransport seen in this fleet's logs). If a device actually uses AES
+        the direct connect raises and we fall back to discover_single, so this is
+        never worse than the previous behaviour.
+        """
+        family = _FAMILY_FOR_DEVICE_TYPE.get(self._device_type)
+        if family is not None:
+            conn = DeviceConnectionParameters(
+                family, DeviceEncryptionType.Klap, https=False
+            )
+            cfg = DeviceConfig(
+                host=self._host, credentials=self._creds, connection_type=conn
+            )
+            try:
+                return await Device.connect(config=cfg)
+            except Exception as err:
+                _LOG.debug(
+                    "Direct connect to %s failed (%s), falling back to discovery",
+                    self._host, err,
+                )
+        return await Discover.discover_single(host=self._host, credentials=self._creds)
 
     async def connect(self) -> bool:
         try:
-            self._device = await Discover.discover_single(
-                host=self._host, credentials=self._creds
-            )
+            self._device = await self._open_device()
             await self._device.update()
         except Exception as err:
             _LOG.warning("Failed to connect to %s: %s", self._host, err)
